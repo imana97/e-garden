@@ -42,10 +42,10 @@
 #define A_FAN         A5
 
 // ANALOG HEATER CONTROL
-#define A_HEATER      A4
+#define A_FAN_REVERSE A4
 
 // ANALOG PUMP CONTROL
-#define A_PUMP        A4
+#define A_PUMP        A3
 
 // ANALONG MOISTURE
 #define A_MOIST1      A0
@@ -57,7 +57,12 @@
 #define sw_serial_tx_pin 10 //  Connect this pin to RX on the esp8266
 #define esp8266_reset_pin 12 // Connect this pin to CH_PD on the esp8266, not reset. (let reset be unconnected)
 
+// LOOP INTERVAL
+#define E_GARDEN_LOOP 10000
+
 SoftwareSerial swSerial(sw_serial_rx_pin, sw_serial_tx_pin);
+
+// GLOBAL VARIABLES ########################################
 
 // the last parameter sets the local echo option for the ESP8266 module..
 ESP8266wifi wifi(swSerial, swSerial, esp8266_reset_pin);//adding Serial enabled local echo and wifi debug
@@ -69,6 +74,126 @@ DHT_Unified dht2(D_HUMID_2, DHTTYPE);
 
 
 
+//################ FUNCTIONS ###############################################
+
+// return the moisture level
+int moisture_level() {
+  return (analogRead(A_MOIST1) + analogRead(A_MOIST2) + analogRead(A_MOIST3)) / 3;
+}
+
+//safe pump watering
+void watering(int t) {
+  digitalWrite(A_PUMP, HIGH); // turn on the pump
+  // wait 2 seconds
+  delay(t);
+  // turn off pump
+  digitalWrite(A_PUMP, LOW);
+};
+
+// return the temperature level. only works with 1 temperature for now.
+int temp1() {
+  sensors_event_t event;
+  dht1.temperature().getEvent(&event);
+  if (!isnan(event.temperature)) {
+    // temperature available
+    return event.temperature;
+  } else {
+    return 25;
+  }
+}
+
+// return the humidity level
+int humid1() {
+  sensors_event_t event;
+  dht1.humidity().getEvent(&event);
+  if (!isnan(event.relative_humidity)) {
+    return event.relative_humidity;
+  } else {
+    return 50;
+  }
+}
+
+
+
+
+// water plants untill a certain moisture level
+int water_plant(int moist) {
+
+  // first check if there is water in the tank
+  if (digitalRead(D_WATER_GAUGE) == 1) {
+    // there is water in the tank
+    if (moisture_level() < moist) {
+      // water for 2 seconds
+      watering(2000);
+      return water_plant(moist); // call water function untill the water level is reached.
+    } else {
+      // moisture level is reached.
+      return moist;
+    }
+  } else {
+    // water gauge is empty
+    return -1;
+  }
+}
+
+int set_temp(int temp) {
+  if (temp1() > temp) {
+    // the temperature in the panel is higher than what we want. so we need to cool it down.
+    
+    
+  } else {
+    // the temperature in the panel is lower than what we want, so heat it up.
+
+    
+  }
+} // end function
+
+// get incoming package and interperet it
+String get_value(String data, char separator, int index)
+{
+  int found = 0;
+  int strIndex[] = { 0, -1 };
+  int maxIndex = data.length() - 1;
+
+  for (int i = 0; i <= maxIndex && found <= index; i++) {
+    if (data.charAt(i) == separator || i == maxIndex) {
+      found++;
+      strIndex[0] = strIndex[1] + 1;
+      strIndex[1] = (i == maxIndex) ? i + 1 : i;
+    }
+  }
+  return found > index ? data.substring(strIndex[0], strIndex[1]) : "";
+}
+
+
+// this function takes the server commnad and run the appropriate service and then send a command to server upon successful execution of the service.
+void process_server_command(String command) {
+
+  String response = "resp:" + get_value(command, ':', 0).toInt();
+  int service = get_value(command, ':', 1).toInt();
+  int value = get_value(command, ':', 2).toInt();
+
+
+  /*
+     Service commands
+
+     1- water plants until it reaches the value
+     2- set temperature to a certail level
+  */
+
+  // run the service
+  if (service == 1) {
+    int m = water_plant(value);
+    wifi.send(SERVER, response + ':' + m);
+  }
+
+  if (service == 2) {
+
+  }
+};
+
+
+
 void setup() {
   swSerial.begin(9600);
   Serial.begin(9600);
@@ -77,14 +202,37 @@ void setup() {
   Serial.println("Starting wifi");
 
 
+  // WIFI SETUP
   wifi.begin(); // SETUP WIFI
+  wifi.connectToAP(WIFI_SSID, WIFI_PASSWORD);
+  wifi.connectToServer(EG_SERVER_IP, EG_SERVER_PORT);
+  wifi.send(SERVER, "start-connection");
 
+
+  // HUMIDITY, TEMPERATURE SENSOR SETUP
   dht1.begin(); // start digital humidity sensor 2
   dht2.begin(); // start digital humidity sensor 2
 
-  wifi.connectToAP(WIFI_SSID, WIFI_PASSWORD);
-  wifi.connectToServer(EG_SERVER_IP, EG_SERVER_PORT);
-  wifi.send(SERVER, "1251:start-connection");
+
+  // RELAY SETUP
+  pinMode(D_RELAY_1, OUTPUT);
+  digitalWrite(D_RELAY_1, HIGH); // OFF
+  pinMode(D_RELAY_2, OUTPUT);
+  digitalWrite(D_RELAY_2, HIGH); // OFF
+  pinMode(D_RELAY_3, OUTPUT);
+  digitalWrite(D_RELAY_3, HIGH); // OFF
+  pinMode(D_RELAY_4, OUTPUT);
+  digitalWrite(D_RELAY_4, HIGH); // OFF
+
+  // MOTOR SETUP
+  pinMode(A_FAN, OUTPUT);
+  pinMode(A_FAN_REVERSE, OUTPUT);
+  pinMode(A_PUMP, OUTPUT);
+
+  // WATER TANK
+  pinMode(D_WATER_GAUGE, INPUT);
+
+
 }
 
 void loop() {
@@ -92,56 +240,29 @@ void loop() {
   //Make sure the esp8266 is started..
   if (!wifi.isStarted())
     wifi.begin();
- 
 
-  //inform the server
+
+  //SEND PACKAGE TO SERVER
   if (millis() > nextPing) {
-    wifi.send(SERVER, "1251:isconnected");
-    nextPing = millis() + 10000;
+    wifi.send(SERVER, "connected:" + millis());
+    nextPing = millis() + E_GARDEN_LOOP;
   }
 
-  //Listen for incoming messages. It will wait until a message is received, or max 6000ms..
+  //RECEIVE PACKAGE FROM SERVER It will wait until a message is received, or max 6000ms..
   WifiMessage in = wifi.listenForIncomingMessage(6000);
   if (in.hasData) {
-    Serial.println(in.message);
-    nextPing = millis() + 10000;
+    Serial.println(in.message);// PACKAGE MESSAGE.
+    nextPing = millis() + E_GARDEN_LOOP;
+
+    // process the incoming message
+    process_server_command(in.message);
   }
-  
+
   //If you want do disconnect from the server use:
   // wifi.disconnectFromServer();
-  
-  
+
+
 } // end loop
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

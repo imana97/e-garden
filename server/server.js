@@ -1,5 +1,10 @@
 var net = require('net');
 
+var interpereter=function (message){
+
+
+};
+
 // Start a TCP Server
 net.createServer(function (socket) {
  
@@ -19,5 +24,5 @@ net.createServer(function (socket) {
   
 }).listen(5000);
 
-// Put a friendly message on the terminal of the server.
+// The terminal message.
 console.log("Chat server running at port 5000\n");
