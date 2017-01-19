@@ -1,20 +1,21 @@
 var net = require('net');
 
-var interpereter=function (message){
+var interpreter=function (message){
+  console.log(message);
 
 
 };
 
 // Start a TCP Server
 net.createServer(function (socket) {
- 
-  // Send a nice welcome message and announce
-  socket.write("Welcome E-garden");
+
 
   // Handle incoming messages from clients.
   socket.on('data', function (data) {
-    console.log(data.toString('ascii'));
-    socket.write(new Date().toISOString());
+    interpreter(data.toString('ascii'),socket); // send it to interpreter.
+
+    // there is a ping pong event. In this case, send the current time
+    socket.write("1251;5;"+new Date().toLocaleString());
   });
 
   // Remove the client from the list when it leaves
@@ -25,4 +26,4 @@ net.createServer(function (socket) {
 }).listen(5000);
 
 // The terminal message.
-console.log("Chat server running at port 5000\n");
+console.log("E-garden server is running on port 5000\n");

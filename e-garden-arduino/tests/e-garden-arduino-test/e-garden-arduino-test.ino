@@ -1,10 +1,3 @@
-/*
-   Version 0.71
-
-
-
-*/
-
 
 // ESP8266 LIBRARIES
 #include <SoftwareSerial.h>
@@ -102,14 +95,12 @@ void update_connection_status() {
 }
 
 // set the alarm
-void eg_alert(unsigned char n) {
-  for (int i = 0; i < n; i++) {
-    analogWrite(EG_ALERT, 2);
-    delay(200);
-    analogWrite(EG_ALERT, 0);
-    delay(200);
-  }
-
+void alarm_alert() {
+  tone(5, 2000, 100);
+  delay(150);
+  tone(5, 2000, 100);
+  delay(150);
+  tone(5, 2000, 100);
 }
 
 // return the moisture level
@@ -173,7 +164,7 @@ int water_plant(int moist) {
   } else {
     Serial.println("NO WATER");
     // buzz the alert
-    eg_alert(3);
+    alarm_alert();
     // water gauge is empty
     return -1;
   }
@@ -215,26 +206,14 @@ String get_value(String data, char separator, int index)
 
 // this function takes the server commnad and run the appropriate service and then send a command to server upon successful execution of the service.
 void process_server_command(String command) {
-  if (command.lastIndexOf(';') == -1) {
-    // the command is corrupted, do something
-    Serial.println("command is corrupted!");
-    eg_alert(1);
-    return false;
-  }
 
-  /*
-     example commnad:
-     id: 1251
-     service: 1 to 254
-     value: 1 to 65000
-  */
+  String response = "resp:" + get_value(command, ':', 0).toInt();
+  int service = get_value(command, ':', 1).toInt();
+  int value = get_value(command, ':', 2).toInt();
 
-  int response = get_value(command, ';', 0).toInt();
-  unsigned char service = get_value(command, ';', 1).toInt();
-  String value = get_value(command, ';', 2);
-
-  // blink the led, letting the user know that we are actually connected
   update_connection_status();
+  //Serial.println("Service Received: " + service);
+  //Serial.println("Value of the Service: " + value);
 
 
   /*
@@ -242,7 +221,6 @@ void process_server_command(String command) {
 
      1- water plants until it reaches the value
      2- set temperature to a certail level
-     5- time service
   */
 
   // run the service
@@ -255,20 +233,10 @@ void process_server_command(String command) {
   if (service == 2) {
 
   }
-
-  if (service == 5) {
-    // time service
-    Serial.println("the time is: " + value);
-    // todo: update the time on LCD
-  }
 };
 
-/*
- * more tests
- * 
- */
 
- //### end test
+
 
 
 void setup() {
@@ -331,14 +299,14 @@ void loop() {
   //###########TESTS################################
 
   //water_plant(2000);
-  //analogWrite(EG_FAN_PWM,255);
+  digitalWrite(EG_VENTILATOR,HIGH);
 
   //########## END TESTS ###########################
 
 
   //SEND PACKAGE TO SERVER
   if (millis() > nextPing) {
-    wifi.send(SERVER, "connected");
+    wifi.send(SERVER, "connected:" + millis());
     nextPing = millis() + EG_LOOP;
   }
 
